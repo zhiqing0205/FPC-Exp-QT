@@ -52,15 +52,15 @@ jobs:
           version: ${{ env.QT_VERSION }}
           cache: true
 
-      - name: Setup Ninja (Windows)
-        if: runner.os == 'Windows'
-        uses: seanmiddleditch/gha-setup-ninja@v5
-
       - name: Setup MSVC
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
+
+      - name: Setup Ninja (Windows)
+        if: runner.os == 'Windows'
+        uses: seanmiddleditch/gha-setup-ninja@v5
 
       - name: Setup vcpkg (Windows)
         if: runner.os == 'Windows'
@@ -68,6 +68,7 @@ jobs:
         uses: lukka/run-vcpkg@v11
         with:
           vcpkgJsonGlob: "vcpkg.json"
+          vcpkgCommitId: "389d14fa0e0692f36967e9eb5499e909317644d5"
           runVcpkgInstall: true
 
       - name: Install FFTW (Linux)
