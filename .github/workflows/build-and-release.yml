@@ -1,0 +1,168 @@
+name: build-and-release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+env:
+  BUILD_TYPE: Release
+  QT_VERSION: "6.6.2"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_suffix: windows-x64
+          - os: ubuntu-latest
+            artifact_suffix: linux-x86_64
+          - os: macos-latest
+            artifact_suffix: macos
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt
+        id: qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          cache: true
+
+      - name: Setup MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Setup vcpkg (Windows)
+        if: runner.os == 'Windows'
+        id: vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgJsonGlob: "vcpkg.json"
+          runVcpkgInstall: true
+
+      - name: Install FFTW (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfftw3-dev
+
+      - name: Install FFTW (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install fftw
+          echo "FFTW3_ROOT=$(brew --prefix fftw)" >> "$GITHUB_ENV"
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
+            -DCMAKE_PREFIX_PATH="${{ steps.qt.outputs.qt-path }}" \
+            -DCMAKE_TOOLCHAIN_FILE="${{ steps.vcpkg.outputs.vcpkgRoot }}/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=x64-windows
+
+      - name: Configure (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
+            -DCMAKE_PREFIX_PATH="${{ steps.qt.outputs.qt-path }}"
+
+      - name: Build
+        shell: bash
+        run: cmake --build build
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          mkdir -p dist
+          cp "build/bin/PFC-Exp-GUI.exe" "dist/"
+          cp "build/bin/pfc-exp-cli.exe" "dist/"
+
+          windeployqt --release --compiler-runtime "dist/PFC-Exp-GUI.exe"
+
+          # Bundle FFTW runtime from vcpkg (manifest mode installs to ./vcpkg_installed)
+          cp vcpkg_installed/x64-windows/bin/*fftw*.dll dist/ || true
+
+          OUT="PFC-Exp-GUI-${VERSION}-${{ matrix.artifact_suffix }}.zip"
+          cmake -E chdir dist cmake -E tar cfv "../${OUT}" --format=zip .
+          echo "artifact=${OUT}" >> "$GITHUB_OUTPUT"
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          mkdir -p dist
+          cp "build/bin/PFC-Exp-GUI" "dist/"
+          cp "build/bin/pfc-exp-cli" "dist/"
+          OUT="PFC-Exp-GUI-${VERSION}-${{ matrix.artifact_suffix }}.tar.gz"
+          cmake -E chdir dist cmake -E tar cfvz "../${OUT}" .
+          echo "artifact=${OUT}" >> "$GITHUB_OUTPUT"
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          APP="build/bin/PFC-Exp-GUI.app"
+          CLI_IN_APP="${APP}/Contents/MacOS/pfc-exp-cli"
+          cp "build/bin/pfc-exp-cli" "${CLI_IN_APP}"
+
+          macdeployqt "${APP}"
+
+          # Bundle FFTW dylib used by the CLI into the app (best-effort).
+          FFTW_LIB="$(otool -L "${CLI_IN_APP}" | awk '/libfftw3/ {print $1; exit}')"
+          if [[ -n "${FFTW_LIB}" && -f "${FFTW_LIB}" ]]; then
+            mkdir -p "${APP}/Contents/Frameworks"
+            cp "${FFTW_LIB}" "${APP}/Contents/Frameworks/"
+            BASE="$(basename "${FFTW_LIB}")"
+            install_name_tool -id "@rpath/${BASE}" "${APP}/Contents/Frameworks/${BASE}"
+            install_name_tool -add_rpath "@executable_path/../Frameworks" "${CLI_IN_APP}" || true
+            install_name_tool -change "${FFTW_LIB}" "@rpath/${BASE}" "${CLI_IN_APP}"
+          fi
+
+          mkdir -p dist
+          cp -R "${APP}" dist/
+          OUT="PFC-Exp-GUI-${VERSION}-${{ matrix.artifact_suffix }}.zip"
+          cmake -E chdir dist cmake -E tar cfv "../${OUT}" --format=zip .
+          echo "artifact=${OUT}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_suffix }}
+          path: |
+            PFC-Exp-GUI-${{ github.ref_name }}-${{ matrix.artifact_suffix }}.*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "*"
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            PFC-Exp-GUI-${{ github.ref_name }}-*
