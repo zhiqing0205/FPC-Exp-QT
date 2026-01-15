@@ -52,6 +52,10 @@ jobs:
           version: ${{ env.QT_VERSION }}
           cache: true
 
+      - name: Setup Ninja (Windows)
+        if: runner.os == 'Windows'
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
       - name: Setup MSVC
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
@@ -79,13 +83,29 @@ jobs:
 
       - name: Configure (Windows)
         if: runner.os == 'Windows'
-        shell: bash
+        shell: pwsh
         run: |
-          cmake -S "${{ steps.proj.outputs.src_dir }}" -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
-            -DCMAKE_PREFIX_PATH="${{ steps.qt.outputs.qt-path }}" \
-            -DCMAKE_TOOLCHAIN_FILE="${{ steps.vcpkg.outputs.vcpkgRoot }}/scripts/buildsystems/vcpkg.cmake" \
-            -DVCPKG_TARGET_TRIPLET=x64-windows
+          $ErrorActionPreference = "Stop"
+
+          $candidates = @()
+          if ($env:VCPKG_INSTALLATION_ROOT) { $candidates += (Join-Path $env:VCPKG_INSTALLATION_ROOT "scripts/buildsystems/vcpkg.cmake") }
+          if ($env:VCPKG_ROOT) { $candidates += (Join-Path $env:VCPKG_ROOT "scripts/buildsystems/vcpkg.cmake") }
+          $candidates += (Join-Path $env:GITHUB_WORKSPACE "vcpkg/scripts/buildsystems/vcpkg.cmake")
+
+          $toolchain = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $toolchain) {
+            Write-Host "Tried toolchain candidates:"
+            $candidates | ForEach-Object { Write-Host "  - $_" }
+            throw "vcpkg toolchain file not found."
+          }
+          Write-Host "Using vcpkg toolchain: $toolchain"
+
+          cmake -S "${{ steps.proj.outputs.src_dir }}" -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE="${{ env.BUILD_TYPE }}" `
+            -DCMAKE_PREFIX_PATH="${{ steps.qt.outputs.qt-path }}" `
+            -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl
 
       - name: Configure (Linux/macOS)
         if: runner.os != 'Windows'
@@ -95,27 +115,35 @@ jobs:
             -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
             -DCMAKE_PREFIX_PATH="${{ steps.qt.outputs.qt-path }}"
 
-      - name: Build
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cmake --build build
+
+      - name: Build (Linux/macOS)
+        if: runner.os != 'Windows'
         shell: bash
         run: cmake --build build
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
-        shell: bash
+        shell: pwsh
         run: |
-          VERSION="${GITHUB_REF_NAME}"
-          mkdir -p dist
-          cp "build/bin/PFC-Exp-GUI.exe" "dist/"
-          cp "build/bin/pfc-exp-cli.exe" "dist/"
+          $ErrorActionPreference = "Stop"
+          $version = $env:GITHUB_REF_NAME
+
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "build/bin/PFC-Exp-GUI.exe" "dist/" -Force
+          Copy-Item "build/bin/pfc-exp-cli.exe" "dist/" -Force
 
           windeployqt --release --compiler-runtime "dist/PFC-Exp-GUI.exe"
 
           # Bundle FFTW runtime from vcpkg (manifest mode installs to ./vcpkg_installed)
-          cp vcpkg_installed/x64-windows/bin/*fftw*.dll dist/ || true
+          Copy-Item "vcpkg_installed/x64-windows/bin/*fftw*.dll" "dist/" -Force -ErrorAction SilentlyContinue
 
-          OUT="PFC-Exp-GUI-${VERSION}-${{ matrix.artifact_suffix }}.zip"
-          cmake -E chdir dist cmake -E tar cfv "../${OUT}" --format=zip .
-          echo "artifact=${OUT}" >> "$GITHUB_OUTPUT"
+          $out = "PFC-Exp-GUI-$version-${{ matrix.artifact_suffix }}.zip"
+          Compress-Archive -Path "dist/*" -DestinationPath $out -Force
+          "artifact=$out" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
