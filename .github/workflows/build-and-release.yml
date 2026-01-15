@@ -68,7 +68,7 @@ jobs:
         uses: lukka/run-vcpkg@v11
         with:
           vcpkgJsonGlob: "vcpkg.json"
-          vcpkgCommitId: "389d14fa0e0692f36967e9eb5499e909317644d5"
+          vcpkgGitCommitId: "389d14fa0e0692f36967e9eb5499e909317644d5"
           runVcpkgInstall: true
 
       - name: Install FFTW (Linux)
@@ -89,9 +89,9 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           $candidates = @()
-          if ($env:VCPKG_INSTALLATION_ROOT) { $candidates += (Join-Path $env:VCPKG_INSTALLATION_ROOT "scripts/buildsystems/vcpkg.cmake") }
-          if ($env:VCPKG_ROOT) { $candidates += (Join-Path $env:VCPKG_ROOT "scripts/buildsystems/vcpkg.cmake") }
           $candidates += (Join-Path $env:GITHUB_WORKSPACE "vcpkg/scripts/buildsystems/vcpkg.cmake")
+          if ($env:VCPKG_ROOT) { $candidates += (Join-Path $env:VCPKG_ROOT "scripts/buildsystems/vcpkg.cmake") }
+          if ($env:VCPKG_INSTALLATION_ROOT) { $candidates += (Join-Path $env:VCPKG_INSTALLATION_ROOT "scripts/buildsystems/vcpkg.cmake") }
 
           $toolchain = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $toolchain) {
