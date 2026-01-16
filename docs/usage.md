@@ -35,3 +35,8 @@ Batch Sweep 支持对 `u0 / con0 / steps` 设置区间与步长，并按笛卡�
 - `params.json`：GUI 写入的参数快照（便于复现实验）
 - `run_config.txt`：CLI 写入的运行参数
 - `phi_*.vti / con_*.vti / *.pvti` 等（实验程序输出）
+
+## 4. macOS 常见问题
+
+- 如果运行时日志显示 `exitCode=9 (SIGKILL)`，通常是 Gatekeeper/隔离属性（quarantine）或依赖 dylib 缺失导致。可以尝试：
+  - `xattr -dr com.apple.quarantine /Applications/PFC-Exp-GUI.app`

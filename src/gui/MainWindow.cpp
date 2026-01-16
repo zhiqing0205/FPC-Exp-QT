@@ -594,6 +594,18 @@ void MainWindow::launchJob(const RunJob& job) {
         }
     }
 #endif
+#ifdef Q_OS_MACOS
+    {
+        const QDir exeDir(QCoreApplication::applicationDirPath());
+        const QDir frameworksDir(exeDir.filePath("../Frameworks"));
+        if (frameworksDir.exists()) {
+            const QStringList fftwDylibs = frameworksDir.entryList(QStringList() << "libfftw3*.dylib", QDir::Files);
+            if (fftwDylibs.isEmpty()) {
+                appendLog("=== Warning: no libfftw3*.dylib found in Contents/Frameworks; macOS may crash at start if FFTW is missing ===");
+            }
+        }
+    }
+#endif
 
     if (process_) {
         process_->deleteLater();
@@ -732,6 +744,11 @@ void MainWindow::onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus
 #ifdef Q_OS_WIN
     if (!ok && exitStatus == QProcess::CrashExit && code == 0xC0000135u) {
         appendLog("=== Hint: 0xC0000135 usually means a required DLL was not found. Ensure FFTW DLLs are bundled next to pfc-exp-cli.exe ===");
+    }
+#endif
+#ifdef Q_OS_MACOS
+    if (!ok && exitStatus == QProcess::CrashExit && code == 9u) {
+        appendLog("=== Hint: SIGKILL(9) on macOS can be Gatekeeper/quarantine or a missing dylib. If this is a downloaded app, try: xattr -dr com.apple.quarantine /Applications/PFC-Exp-GUI.app ===");
     }
 #endif
 

@@ -79,7 +79,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install fftw
+          brew install fftw libomp
           echo "FFTW3_ROOT=$(brew --prefix fftw)" >> "$GITHUB_ENV"
 
       - name: Configure (Windows)
@@ -193,19 +193,89 @@ jobs:
           APP="build/bin/PFC-Exp-GUI.app"
           CLI_IN_APP="${APP}/Contents/MacOS/pfc-exp-cli"
           cp "build/bin/pfc-exp-cli" "${CLI_IN_APP}"
+          chmod +x "${CLI_IN_APP}"
 
           macdeployqt "${APP}"
 
-          # Bundle FFTW dylib used by the CLI into the app (best-effort).
-          FFTW_LIB="$(otool -L "${CLI_IN_APP}" | awk '/libfftw3/ {print $1; exit}')"
-          if [[ -n "${FFTW_LIB}" && -f "${FFTW_LIB}" ]]; then
-            mkdir -p "${APP}/Contents/Frameworks"
-            cp "${FFTW_LIB}" "${APP}/Contents/Frameworks/"
-            BASE="$(basename "${FFTW_LIB}")"
-            install_name_tool -id "@rpath/${BASE}" "${APP}/Contents/Frameworks/${BASE}"
-            install_name_tool -add_rpath "@executable_path/../Frameworks" "${CLI_IN_APP}" || true
-            install_name_tool -change "${FFTW_LIB}" "@rpath/${BASE}" "${CLI_IN_APP}"
+          # Bundle FFTW (and its optional libomp dependency) used by the CLI into the app.
+          FRAMEWORKS_DIR="${APP}/Contents/Frameworks"
+          mkdir -p "${FRAMEWORKS_DIR}"
+
+          install_name_tool -add_rpath "@executable_path/../Frameworks" "${CLI_IN_APP}" || true
+
+          fftw_ref="$(otool -L "${CLI_IN_APP}" | awk '/libfftw3/ {print $1; exit}')"
+          if [[ -n "${fftw_ref}" ]]; then
+            fftw_base="$(basename "${fftw_ref}")"
+            fftw_prefix="${FFTW3_ROOT:-$(brew --prefix fftw)}"
+            fftw_src=""
+            if [[ "${fftw_ref}" == /* && -f "${fftw_ref}" ]]; then
+              fftw_src="${fftw_ref}"
+            elif [[ -f "${fftw_prefix}/lib/${fftw_base}" ]]; then
+              fftw_src="${fftw_prefix}/lib/${fftw_base}"
+            else
+              fftw_src="$(ls -1 "${fftw_prefix}/lib/${fftw_base}" "${fftw_prefix}/lib/libfftw3"*.dylib 2>/dev/null | head -n 1 || true)"
+            fi
+
+            if [[ -n "${fftw_src}" && -f "${fftw_src}" ]]; then
+              cp "${fftw_src}" "${FRAMEWORKS_DIR}/${fftw_base}"
+              install_name_tool -id "@rpath/${fftw_base}" "${FRAMEWORKS_DIR}/${fftw_base}" || true
+              install_name_tool -change "${fftw_ref}" "@rpath/${fftw_base}" "${CLI_IN_APP}" || true
+            else
+              echo "Warning: failed to locate FFTW dylib for '${fftw_ref}' (FFTW3_ROOT='${fftw_prefix}')"
+            fi
+          else
+            echo "Warning: CLI does not link against libfftw3 according to otool."
           fi
+
+          # Bundle libomp if needed (CLI or FFTW may depend on it).
+          omp_ref="$(otool -L "${CLI_IN_APP}" | awk '/libomp|libgomp/ {print $1; exit}')"
+          if [[ -z "${omp_ref}" && -n "${fftw_base}" && -f "${FRAMEWORKS_DIR}/${fftw_base}" ]]; then
+            omp_ref="$(otool -L "${FRAMEWORKS_DIR}/${fftw_base}" | awk '/libomp|libgomp/ {print $1; exit}')"
+          fi
+          if [[ -n "${omp_ref}" && "${omp_ref}" != /usr/lib/* && "${omp_ref}" != /System/Library/* ]]; then
+            omp_base="$(basename "${omp_ref}")"
+            omp_src=""
+            if [[ "${omp_ref}" == /* && -f "${omp_ref}" ]]; then
+              omp_src="${omp_ref}"
+            else
+              omp_prefix="$(brew --prefix libomp 2>/dev/null || true)"
+              if [[ -z "${omp_prefix}" ]]; then
+                omp_prefix="$(brew --prefix llvm 2>/dev/null || true)"
+              fi
+              if [[ -n "${omp_prefix}" && -f "${omp_prefix}/lib/${omp_base}" ]]; then
+                omp_src="${omp_prefix}/lib/${omp_base}"
+              fi
+            fi
+
+            if [[ -n "${omp_src}" && -f "${omp_src}" ]]; then
+              cp "${omp_src}" "${FRAMEWORKS_DIR}/${omp_base}"
+              install_name_tool -id "@rpath/${omp_base}" "${FRAMEWORKS_DIR}/${omp_base}" || true
+
+              cli_omp_ref="$(otool -L "${CLI_IN_APP}" | awk '/libomp|libgomp/ {print $1; exit}')"
+              if [[ -n "${cli_omp_ref}" ]]; then
+                install_name_tool -change "${cli_omp_ref}" "@rpath/${omp_base}" "${CLI_IN_APP}" || true
+              fi
+
+              if [[ -n "${fftw_base}" && -f "${FRAMEWORKS_DIR}/${fftw_base}" ]]; then
+                fftw_omp_ref="$(otool -L "${FRAMEWORKS_DIR}/${fftw_base}" | awk '/libomp|libgomp/ {print $1; exit}')"
+                if [[ -n "${fftw_omp_ref}" ]]; then
+                  install_name_tool -change "${fftw_omp_ref}" "@loader_path/${omp_base}" "${FRAMEWORKS_DIR}/${fftw_base}" || true
+                fi
+              fi
+            else
+              echo "Warning: failed to locate libomp dylib for '${omp_ref}'."
+            fi
+          fi
+
+          echo "=== otool -L (CLI) ==="
+          otool -L "${CLI_IN_APP}" || true
+          if [[ -n "${fftw_base}" && -f "${FRAMEWORKS_DIR}/${fftw_base}" ]]; then
+            echo "=== otool -L (FFTW) ==="
+            otool -L "${FRAMEWORKS_DIR}/${fftw_base}" || true
+          fi
+
+          # Ad-hoc sign the bundle so macOS won't kill the helper due to invalid/inconsistent signatures.
+          codesign --force --deep --sign - "${APP}"
 
           mkdir -p dist
           cp -R "${APP}" dist/
