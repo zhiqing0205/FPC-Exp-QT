@@ -154,6 +154,7 @@ using namespace std;
 
 static int total_steps = 200;
 static std::string output_dir;
+static unsigned int base_seed = FIXED_SEED;
 
 static void PrintUsage(const char* argv0) {
     cerr
@@ -166,6 +167,7 @@ static void PrintUsage(const char* argv0) {
         << "  --dx <float>        Space step (default: 0.125)\n"
         << "  --steps <int>       Total iterations (default: 200)\n"
         << "  --mod <int>         Output/analysis interval (default: 25)\n"
+        << "  --seed <uint>       Random seed base (default: 20200604)\n"
         << "  --grainx <int>      Initial grains in x (default: 16)\n"
         << "  --grainy <int>      Initial grains in y (default: 16)\n"
         << "  --grainz <int>      Initial grains in z (default: 1)\n"
@@ -192,6 +194,17 @@ static bool ParseFloatArg(const char* value, float& out) {
     float v = strtof(value, &end);
     if (errno != 0 || end == value || *end != '\0') return false;
     out = v;
+    return true;
+}
+
+static bool ParseUintArg(const char* value, unsigned int& out) {
+    if (!value) return false;
+    char* end = nullptr;
+    errno = 0;
+    unsigned long long v = strtoull(value, &end, 10);
+    if (errno != 0 || end == value || *end != '\0') return false;
+    if (v > std::numeric_limits<unsigned int>::max()) return false;
+    out = static_cast<unsigned int>(v);
     return true;
 }
 
@@ -396,6 +409,11 @@ static int ParseArgs(int argc, char** argv, int myid) {
             if (!ParseIntArg(v, mod)) goto bad_args;
             continue;
         }
+        if (arg == "--seed" || HasPrefix(arg, "--seed=")) {
+            const char* v = (arg == "--seed") ? require_value("--seed") : (raw + strlen("--seed="));
+            if (!ParseUintArg(v, base_seed)) goto bad_args;
+            continue;
+        }
         if (arg == "--grainx" || HasPrefix(arg, "--grainx=")) {
             const char* v = (arg == "--grainx") ? require_value("--grainx") : (raw + strlen("--grainx="));
             if (!ParseIntArg(v, grainx)) goto bad_args;
@@ -535,6 +553,7 @@ ofstream checkpoint_log;
 	        << "u0=" << u0 << " con0=" << con0 << " sig=" << sig
 	        << " dt=" << dt << " dx=" << dx
 	        << " steps=" << total_steps << " mod=" << mod
+	        << " seed=" << base_seed
 	        << " grid=(" << L << "," << M << "," << N << ")"
 	        << " grain=(" << grainx << "," << grainy << "," << grainz << ")"
 	        << " axx=" << axx << " b0=" << b0
@@ -550,6 +569,7 @@ ofstream checkpoint_log;
 	        run_cfg << "dx " << dx << "\n";
 	        run_cfg << "steps " << total_steps << "\n";
 	        run_cfg << "mod " << mod << "\n";
+	        run_cfg << "seed " << base_seed << "\n";
 	        run_cfg << "L " << L << "\n";
 	        run_cfg << "M " << M << "\n";
 	        run_cfg << "N " << N << "\n";
@@ -674,8 +694,10 @@ PVTKWRITEC(local_n0,numprocs,0,N,Pnamec);
 
 
 
-            if ((t % mod) == 0) {
+            const int output_step = t + 1;
+            if ((output_step % mod) == 0 || output_step == total_steps) {
 // if(t==500) {sig=0.02;mod=5000;INITIAL_con(con,local_n0);}
+                kd = output_step;
 				phimax_atmposi(phi, con, local_n0, local_0_start, myid, numprocs);
 				//sVTKwriteBianry(phi, local_n0, local_0_start, myid, numprocs);
 				//PVTKWRITE(local_n0, numprocs, 0, N, Pname);
@@ -687,7 +709,7 @@ PVTKWRITEC(local_n0,numprocs,0,N,Pnamec);
 				    const auto now = std::chrono::system_clock::now();
 				    const auto timestamp_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
 				        now.time_since_epoch()).count();
-				    checkpoint_log << "step " << t << " timestamp_ms " << timestamp_ms << endl;
+				    checkpoint_log << "step " << output_step << " timestamp_ms " << timestamp_ms << endl;
 				    checkpoint_log.flush();
 				}
             }
@@ -800,7 +822,7 @@ void INITIAL_dis(fftw_complex* dphi, fftw_complex* dcon, int dlocal_0_start, int
 				center_x = dnx * iii + dnx / 2; center_y = dny * jjj + dny / 2; center_z = dnz * kkk + dnz / 2;
 
 
-				srand(FIXED_SEED ^ ((unsigned int)(center_x + center_y + center_z) * 2654435761u));
+				srand(base_seed ^ ((unsigned int)(center_x + center_y + center_z) * 2654435761u));
 				v1 = 80. * (double(rand()) / RAND_MAX - 0.5);
 				v2 = double(rand()) / RAND_MAX / 10.;
 
@@ -1114,7 +1136,7 @@ void MAINEQUATIONC2MIX(fftw_complex *dphiHat,fftw_complex *dconHat, fftw_complex
 void Gauss(fftw_complex *dnois,int dlocal_n0,int dlocal_0_start, int dmyid, int timestep){
    float iseed_radia=20.;
    float r,v1,v2,f,ra,x,y,z;
-		 srand(FIXED_SEED ^ ((unsigned int)(dmyid+1) * 2654435761u) ^ ((unsigned int)timestep * 374761393u));
+		 srand(base_seed ^ ((unsigned int)(dmyid+1) * 2654435761u) ^ ((unsigned int)timestep * 374761393u));
 for(int l=0; l <dlocal_n0; l ++){
  for (int m=0; m <M; m ++){
      for (int n=0; n <N; n ++) {

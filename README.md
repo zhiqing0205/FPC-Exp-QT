@@ -67,7 +67,7 @@ cmake --build build --config Release
 
 ```bash
 ./pfc-exp-cli --help
-./pfc-exp-cli --steps 200 --mod 25 --u0 0.05 --con0 0.2 --outdir ./out/run1
+./pfc-exp-cli --steps 200 --mod 25 --seed 20200604 --u0 0.05 --con0 0.2 --outdir ./out/run1
 ```
 
 ## 网格尺寸（编译期）
@@ -84,4 +84,3 @@ cmake --build build
 仓库内提供工作流：在 push tag（例如 `v0.1.0`）时自动构建 Windows/macOS/Linux 并上传 release 产物（可适当简化为 zip/tar.gz）。
 
 更多实验程序原理说明见 `docs/misfit_uniform_time_seed_fftw_early_overview.md`。
-

@@ -85,6 +85,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     singleDx_ = makeDoubleSpin(1e-6, 10.0, 0.125, 6, 0.01);
     singleSteps_ = makeIntSpin(1, 100000000, 200, 10);
     singleMod_ = makeIntSpin(1, 100000000, 25, 1);
+    singleSeed_ = makeIntSpin(0, 2147483647, 20200604, 1);
     singleGrainX_ = makeIntSpin(1, 4096, 16, 1);
     singleGrainY_ = makeIntSpin(1, 4096, 16, 1);
     singleGrainZ_ = makeIntSpin(1, 4096, 1, 1);
@@ -97,6 +98,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     singleParamsForm->addRow("dx", singleDx_);
     singleParamsForm->addRow("steps", singleSteps_);
     singleParamsForm->addRow("mod (checkpoint interval)", singleMod_);
+    singleParamsForm->addRow("seed (rng)", singleSeed_);
     singleParamsForm->addRow("grainx", singleGrainX_);
     singleParamsForm->addRow("grainy", singleGrainY_);
     singleParamsForm->addRow("grainz", singleGrainZ_);
@@ -154,6 +156,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     batchDt_ = makeDoubleSpin(1e-6, 1.0, 0.05, 6, 0.01);
     batchDx_ = makeDoubleSpin(1e-6, 10.0, 0.125, 6, 0.01);
     batchMod_ = makeIntSpin(1, 100000000, 25, 1);
+    batchSeed_ = makeIntSpin(0, 2147483647, 20200604, 1);
     batchGrainX_ = makeIntSpin(1, 4096, 16, 1);
     batchGrainY_ = makeIntSpin(1, 4096, 16, 1);
     batchGrainZ_ = makeIntSpin(1, 4096, 1, 1);
@@ -163,6 +166,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     batchFixedForm->addRow("dt", batchDt_);
     batchFixedForm->addRow("dx", batchDx_);
     batchFixedForm->addRow("mod (checkpoint interval)", batchMod_);
+    batchFixedForm->addRow("seed (rng)", batchSeed_);
     batchFixedForm->addRow("grainx", batchGrainX_);
     batchFixedForm->addRow("grainy", batchGrainY_);
     batchFixedForm->addRow("grainz", batchGrainZ_);
@@ -372,6 +376,7 @@ RunParams MainWindow::singleParams() const {
     p.dx = singleDx_->value();
     p.steps = singleSteps_->value();
     p.mod = singleMod_->value();
+    p.seed = singleSeed_->value();
     p.grainx = singleGrainX_->value();
     p.grainy = singleGrainY_->value();
     p.grainz = singleGrainZ_->value();
@@ -385,6 +390,7 @@ RunParams MainWindow::batchFixedParams() const {
     p.dt = batchDt_->value();
     p.dx = batchDx_->value();
     p.mod = batchMod_->value();
+    p.seed = batchSeed_->value();
     p.grainx = batchGrainX_->value();
     p.grainy = batchGrainY_->value();
     p.grainz = batchGrainZ_->value();
@@ -402,6 +408,7 @@ QStringList MainWindow::buildArgs(const RunParams& params, const QString& outDir
     args << "--dx" << f(params.dx);
     args << "--steps" << QString::number(params.steps);
     args << "--mod" << QString::number(params.mod);
+    args << "--seed" << QString::number(params.seed);
     args << "--grainx" << QString::number(params.grainx);
     args << "--grainy" << QString::number(params.grainy);
     args << "--grainz" << QString::number(params.grainz);
@@ -425,6 +432,7 @@ bool MainWindow::writeParamsJson(const RunJob& job, QString* errorOut) const {
     p["dx"] = job.params.dx;
     p["steps"] = job.params.steps;
     p["mod"] = job.params.mod;
+    p["seed"] = job.params.seed;
     p["grainx"] = job.params.grainx;
     p["grainy"] = job.params.grainy;
     p["grainz"] = job.params.grainz;

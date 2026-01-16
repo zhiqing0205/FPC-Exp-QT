@@ -8,6 +8,7 @@
    - `u0`：密度/序参量均值
    - `con0`：浓度均值
    - `steps`：迭代步数
+   - `seed`：随机数种子（用于初始晶粒/噪声等随机过程，便于复现）
 4. 点击 `Run`。
 
 输出将写入 `Base output dir/Run folder name/`。
@@ -34,4 +35,3 @@ Batch Sweep 支持对 `u0 / con0 / steps` 设置区间与步长，并按笛卡�
 - `params.json`：GUI 写入的参数快照（便于复现实验）
 - `run_config.txt`：CLI 写入的运行参数
 - `phi_*.vti / con_*.vti / *.pvti` 等（实验程序输出）
-

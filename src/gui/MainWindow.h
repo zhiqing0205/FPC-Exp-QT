@@ -20,6 +20,7 @@ struct RunParams {
     double dx = 0.125;
     int steps = 200;
     int mod = 25;
+    int seed = 20200604;
     int grainx = 16;
     int grainy = 16;
     int grainz = 1;
@@ -85,6 +86,7 @@ private:
     QDoubleSpinBox* singleDx_ = nullptr;
     QSpinBox* singleSteps_ = nullptr;
     QSpinBox* singleMod_ = nullptr;
+    QSpinBox* singleSeed_ = nullptr;
     QSpinBox* singleGrainX_ = nullptr;
     QSpinBox* singleGrainY_ = nullptr;
     QSpinBox* singleGrainZ_ = nullptr;
@@ -97,6 +99,7 @@ private:
     QDoubleSpinBox* batchDt_ = nullptr;
     QDoubleSpinBox* batchDx_ = nullptr;
     QSpinBox* batchMod_ = nullptr;
+    QSpinBox* batchSeed_ = nullptr;
     QSpinBox* batchGrainX_ = nullptr;
     QSpinBox* batchGrainY_ = nullptr;
     QSpinBox* batchGrainZ_ = nullptr;
